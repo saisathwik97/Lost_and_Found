@@ -424,7 +424,7 @@ app.get('/api/chat-users/:user_email', (req, res) => {
     });
 });
 
-const server = app.listen(port, '127.0.0.1', () => {
+const server = app.listen(port, "0.0.0.0", () => {
     console.log(`Server running at http://localhost:${port}`);
     console.log(`Server bound to ${server.address().address}:${server.address().port}`);
 }).on('error', (err) => {
