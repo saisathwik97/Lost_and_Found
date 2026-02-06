@@ -4,38 +4,34 @@ const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
 const fs = require('fs');
-
+require("dotenv").config();
 const app = express();
 const port = 3000;
-
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Basic route for testing
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Error handling middleware
+
 app.use((err, req, res, next) => {
     console.error('Error:', err);
     res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// MySQL Connection with SSL
 const db = mysql.createConnection({
-    host: 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com',
-    user: '4KQGiEoryhEidkP.root',
-    password: 'RBjh5WeZSnaZZKAf',
-    port: 4000,
+    host: process.env.host ,
+    user: process.env.user,
+    password: process.env.password,
+    port: process.env.port,
     ssl: {
         ca: fs.readFileSync(path.join(__dirname, 'ssl', 'ca.pem'))
     }
 });
 
-// Handle MySQL connection
+
 db.connect((err) => {
     if (err) {
         console.error('Error connecting to MySQL:', err);
@@ -46,27 +42,25 @@ db.connect((err) => {
     }
     console.log('Connected to MySQL database');
     
-    // Create database and tables
+  
     initDatabase();
 });
 
-// Create database and tables if they don't exist
+
 const initDatabase = () => {
-    // First, create the database if it doesn't exist
+
     db.query('CREATE DATABASE IF NOT EXISTS lost_and_found', (err) => {
         if (err) {
             console.error('Error creating database:', err);
             return;
         }
-        
-        // Switch to the database
+  
         db.query('USE lost_and_found', (err) => {
             if (err) {
                 console.error('Error switching to database:', err);
                 return;
             }
             
-            // Drop the existing tables if they exist
             db.query('DROP TABLE IF EXISTS messages', (err) => {
                 if (err) {
                     console.error('Error dropping messages table:', err);
@@ -79,7 +73,6 @@ const initDatabase = () => {
                         return;
                     }
                     
-                    // Create the items table
                     const createItemsTableQuery = `
                         CREATE TABLE IF NOT EXISTS items (
                             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -98,8 +91,6 @@ const initDatabase = () => {
                             console.error('Error creating items table:', err);
                             return;
                         }
-                        
-                        // Create the messages table
                         const createMessagesTableQuery = `
                             CREATE TABLE IF NOT EXISTS messages (
                                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -125,7 +116,6 @@ const initDatabase = () => {
     });
 };
 
-// Configure multer for file uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const uploadDir = 'public/uploads';
@@ -141,7 +131,6 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// Routes
 app.post('/api/items', upload.single('image'), (req, res) => {
     try {
         const { title, description, type, userEmail } = req.body;
@@ -150,13 +139,12 @@ app.post('/api/items', upload.single('image'), (req, res) => {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
-        // Handle optional image upload
+  
         let imagePath = null;
         if (req.file) {
             imagePath = `/uploads/${req.file.filename}`;
         }
 
-        // First ensure we're using the correct database
         db.query('USE lost_and_found', (err) => {
             if (err) {
                 console.error('Error switching to database:', err);
@@ -168,7 +156,7 @@ app.post('/api/items', upload.single('image'), (req, res) => {
                 VALUES (?, ?, ?, ?, ?, 'pending')
             `;
 
-            // If no image, use NULL in the query
+      
             const imageValue = imagePath || null;
 
             db.query(query, [title, description, imageValue, type, userEmail], (err, result) => {
@@ -258,15 +246,14 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// Login route
 app.post('/api/login', (req, res) => {
     const { email, password, type } = req.body;
     
-    // Admin credentials
+
     if (type === 'admin' && email === 'admin@email.com' && password === 'admin123') {
         res.json({ success: true, message: 'Admin login successful' });
     } 
-    // Student credentials
+  
     else if (type === 'student' && 
         ((email === '23241a05j0@gmail.com' && password === '1234') || 
          (email === '23241a05h7@gmail.com' && password === '1234') ||
@@ -278,7 +265,7 @@ app.post('/api/login', (req, res) => {
     }
 });
 
-// Get approved items for students
+
 app.get('/api/items/approved', (req, res) => {
     const query = `
         SELECT * FROM items 
@@ -295,7 +282,6 @@ app.get('/api/items/approved', (req, res) => {
     });
 });
 
-// Get items by user email
 app.get('/api/items/user/:email', (req, res) => {
     const query = `
         SELECT * FROM items 
@@ -312,7 +298,7 @@ app.get('/api/items/user/:email', (req, res) => {
     });
 });
 
-// Delete item
+
 app.delete('/api/items/:id', (req, res) => {
     const itemId = req.params.id;
     const userEmail = req.headers['user-email'];
@@ -324,7 +310,7 @@ app.delete('/api/items/:id', (req, res) => {
             return res.status(500).json({ error: 'Database error' });
         }
 
-        // First get the item details including image path
+
         const getItemQuery = 'SELECT user_email, image_path FROM items WHERE id = ?';
         db.query(getItemQuery, [itemId], (err, results) => {
             if (err) {
@@ -338,12 +324,12 @@ app.delete('/api/items/:id', (req, res) => {
 
             const item = results[0];
 
-            // Check if user is admin or the owner of the item
+       
             if (userType !== 'admin' && item.user_email !== userEmail) {
                 return res.status(403).json({ error: 'You can only delete your own items' });
             }
 
-            // Delete the item from database
+       
             const deleteQuery = 'DELETE FROM items WHERE id = ?';
             db.query(deleteQuery, [itemId], (err) => {
                 if (err) {
@@ -351,7 +337,7 @@ app.delete('/api/items/:id', (req, res) => {
                     return res.status(500).json({ error: 'Error deleting item' });
                 }
 
-                // Delete the associated image file if it exists
+           
                 if (item.image_path) {
                     const imagePath = path.join(__dirname, 'public', item.image_path);
                     fs.unlink(imagePath, (err) => {
@@ -367,7 +353,6 @@ app.delete('/api/items/:id', (req, res) => {
     });
 });
 
-// Chat routes
 app.post('/api/messages', (req, res) => {
     const { sender_email, receiver_email, message } = req.body;
     
@@ -439,7 +424,6 @@ app.get('/api/chat-users/:user_email', (req, res) => {
     });
 });
 
-// Start the server with explicit host binding
 const server = app.listen(port, '127.0.0.1', () => {
     console.log(`Server running at http://localhost:${port}`);
     console.log(`Server bound to ${server.address().address}:${server.address().port}`);
