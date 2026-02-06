@@ -1,10 +1,11 @@
+require("dotenv").config();
 const express = require('express');
 const mysql = require('mysql2');
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
 const fs = require('fs');
-require("dotenv").config();
+
 const app = express();
 const port = 3000;
 app.use(cors());
@@ -22,13 +23,12 @@ app.use((err, req, res, next) => {
 });
 
 const db = mysql.createConnection({
-    host: process.env.host ,
-    user: process.env.user,
-    password: process.env.password,
-    port: process.env.port,
-    ssl: {
-        ca: fs.readFileSync(path.join(__dirname, 'ssl', 'ca.pem'))
-    }
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: Number(process.env.DB_PORT),
+  ssl: { rejectUnauthorized: true }
 });
 
 
