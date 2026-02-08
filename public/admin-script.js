@@ -1,12 +1,10 @@
-// Check if user is logged in as admin
+
 if (!sessionStorage.getItem('userType') || sessionStorage.getItem('userType') !== 'admin') {
     window.location.href = '/';
 }
 
-// Display user email
 document.getElementById('userEmailDisplay').textContent = `Logged in as: ${sessionStorage.getItem('userEmail')}`;
 
-// Load pending items
 async function loadPendingItems() {
     try {
         const response = await fetch('/api/items/pending');
@@ -41,7 +39,7 @@ async function loadPendingItems() {
     }
 }
 
-// Load approved items
+
 async function loadApprovedItems() {
     try {
         const response = await fetch('/api/items/approved');
@@ -75,7 +73,7 @@ async function loadApprovedItems() {
     }
 }
 
-// Approve item
+
 async function approveItem(itemId) {
     try {
         const response = await fetch(`/api/items/${itemId}/approve`, {
@@ -100,7 +98,6 @@ async function approveItem(itemId) {
     }
 }
 
-// Reject item
 async function rejectItem(itemId) {
     try {
         const response = await fetch(`/api/items/${itemId}/reject`, {
@@ -124,7 +121,6 @@ async function rejectItem(itemId) {
     }
 }
 
-// Delete item
 async function deleteItem(itemId) {
     if (!confirm('Are you sure you want to delete this item?')) {
         return;
@@ -142,7 +138,7 @@ async function deleteItem(itemId) {
         
         if (response.ok) {
             alert('Item deleted successfully');
-            // Refresh both sections
+       
             loadPendingItems();
             loadApprovedItems();
         } else {
@@ -154,13 +150,12 @@ async function deleteItem(itemId) {
     }
 }
 
-// Load items when page loads
 document.addEventListener('DOMContentLoaded', () => {
     loadPendingItems();
     loadApprovedItems();
 });
 
-// Chat functionality
+
 let chatInterval;
 let selectedUser = null;
 
@@ -274,9 +269,8 @@ async function sendMessage() {
     }
 }
 
-// Add event listener for Enter key in message input
 document.getElementById('messageInput').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         sendMessage();
     }
-}); 
+});

@@ -1,19 +1,23 @@
-// Check if user is logged in as student
+
 if (!sessionStorage.getItem('userType') || sessionStorage.getItem('userType') !== 'student') {
     window.location.href = '/';
 }
 
-// Display user email
 document.getElementById('userEmailDisplay').textContent = `Logged in as: ${sessionStorage.getItem('userEmail')}`;
 
-// Load approved items
+
 async function loadApprovedItems() {
     try {
-        const response = await fetch('/api/items/approved');
+        const userEmail = sessionStorage.getItem('userEmail');
+        const response = await fetch(`/api/items?userEmail=${encodeURIComponent(userEmail)}`);
         const items = await response.json();
-        
         const itemsGrid = document.getElementById('approvedItems');
         itemsGrid.innerHTML = '';
+        
+        if (items.length === 0) {
+            itemsGrid.innerHTML = '<p class="no-items">No matching items found. Post a lost/found item to see matches!</p>';
+            return;
+        }
         
         items.forEach(item => {
             const itemCard = document.createElement('div');
@@ -27,16 +31,18 @@ async function loadApprovedItems() {
                     <span>Type: <span  class="${typeClass}">${item.type}</span></span>
                 </p>
                 <p class="user-info">Posted by: ${item.user_email}</p>
+                <p class="match-badge">✨ AI Matched Item</p>
             `;
             itemsGrid.appendChild(itemCard);
         });
     } catch (error) {
         console.error('Error loading approved items:', error);
-        alert('Error loading approved items');
+        const itemsGrid = document.getElementById('approvedItems');
+        itemsGrid.innerHTML = '<p class="error-message">Error loading items. Please try again.</p>';
     }
 }
 
-// Load student's items
+
 async function loadMyItems() {
     try {
         const userEmail = sessionStorage.getItem('userEmail');
@@ -45,6 +51,11 @@ async function loadMyItems() {
         
         const itemsGrid = document.getElementById('myItems');
         itemsGrid.innerHTML = '';
+        
+        if (items.length === 0) {
+            itemsGrid.innerHTML = '<p class="no-items">You haven\'t posted any items yet.</p>';
+            return;
+        }
         
         items.forEach(item => {
             const itemCard = document.createElement('div');
@@ -75,7 +86,6 @@ async function loadMyItems() {
     }
 }
 
-// Delete student's own item
 async function deleteMyItem(itemId) {
     if (!confirm('Are you sure you want to delete this item?')) {
         return;
@@ -94,7 +104,6 @@ async function deleteMyItem(itemId) {
         
         if (response.ok) {
             alert('Item deleted successfully');
-            // Refresh both sections
             loadMyItems();
             loadApprovedItems();
         } else {
@@ -106,7 +115,7 @@ async function deleteMyItem(itemId) {
     }
 }
 
-// Post new item
+
 async function postItem() {
     const title = document.getElementById('itemTitle').value;
     const description = document.getElementById('itemDescription').value;
@@ -136,13 +145,12 @@ async function postItem() {
         const data = await response.json();
         
         if (response.ok) {
-            alert('Item posted successfully');
-            // Clear form
+            alert('Item posted successfully! Once approved, you\'ll see AI-matched items.');
             document.getElementById('itemTitle').value = '';
             document.getElementById('itemDescription').value = '';
             document.getElementById('itemType').value = '';
             document.getElementById('itemImage').value = '';
-            // Reload items
+ 
             loadMyItems();
         } else {
             alert(data.error || 'Error posting item. Please try again.');
@@ -153,7 +161,6 @@ async function postItem() {
     }
 }
 
-// Chat functionality
 let chatInterval;
 
 function toggleChat() {
@@ -222,15 +229,14 @@ async function sendMessage() {
     }
 }
 
-// Add event listener for Enter key in message input
+
 document.getElementById('messageInput').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         sendMessage();
     }
 });
 
-// Load items when page loads
 document.addEventListener('DOMContentLoaded', () => {
     loadApprovedItems();
     loadMyItems();
-}); 
+});

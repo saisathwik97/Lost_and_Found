@@ -5,12 +5,15 @@ const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
 const fs = require('fs');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
 const port = 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
@@ -48,7 +51,6 @@ db.connect((err) => {
 
 
 const initDatabase = () => {
-
     db.query('CREATE DATABASE IF NOT EXISTS lost_and_found', (err) => {
         if (err) {
             console.error('Error creating database:', err);
@@ -61,55 +63,42 @@ const initDatabase = () => {
                 return;
             }
             
-            db.query('DROP TABLE IF EXISTS messages', (err) => {
+            const createItemsTableQuery = `
+                CREATE TABLE IF NOT EXISTS items (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL,
+                    description TEXT NOT NULL,
+                    image_path VARCHAR(255),
+                    type ENUM('lost', 'found') NOT NULL,
+                    user_email VARCHAR(255) NOT NULL,
+                    status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `;
+            
+            db.query(createItemsTableQuery, (err) => {
                 if (err) {
-                    console.error('Error dropping messages table:', err);
+                    console.error('Error creating items table:', err);
                     return;
                 }
                 
-                db.query('DROP TABLE IF EXISTS items', (err) => {
+                const createMessagesTableQuery = `
+                    CREATE TABLE IF NOT EXISTS messages (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        sender_email VARCHAR(255) NOT NULL,
+                        receiver_email VARCHAR(255) NOT NULL,
+                        message TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        is_read BOOLEAN DEFAULT FALSE
+                    )
+                `;
+                
+                db.query(createMessagesTableQuery, (err) => {
                     if (err) {
-                        console.error('Error dropping items table:', err);
+                        console.error('Error creating messages table:', err);
                         return;
                     }
-                    
-                    const createItemsTableQuery = `
-                        CREATE TABLE IF NOT EXISTS items (
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            title VARCHAR(255) NOT NULL,
-                            description TEXT NOT NULL,
-                            image_path VARCHAR(255),
-                            type ENUM('lost', 'found') NOT NULL,
-                            user_email VARCHAR(255) NOT NULL,
-                            status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        )
-                    `;
-                    
-                    db.query(createItemsTableQuery, (err) => {
-                        if (err) {
-                            console.error('Error creating items table:', err);
-                            return;
-                        }
-                        const createMessagesTableQuery = `
-                            CREATE TABLE IF NOT EXISTS messages (
-                                id INT AUTO_INCREMENT PRIMARY KEY,
-                                sender_email VARCHAR(255) NOT NULL,
-                                receiver_email VARCHAR(255) NOT NULL,
-                                message TEXT NOT NULL,
-                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                is_read BOOLEAN DEFAULT FALSE
-                            )
-                        `;
-                        
-                        db.query(createMessagesTableQuery, (err) => {
-                            if (err) {
-                                console.error('Error creating messages table:', err);
-                                return;
-                            }
-                            console.log('Database and tables initialized successfully');
-                        });
-                    });
+                    console.log('Database and tables initialized successfully');
                 });
             });
         });
@@ -130,6 +119,85 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
+
+async function checkItemsMatch(lostItem, foundItem) {
+    try {
+        const model = genAI.getGenerativeModel({ model: "models/gemini-2.5-flash" });
+        
+        const prompt = `
+            You are an AI assistant helping match lost and found items.
+            
+            Lost Item:
+            Title: ${lostItem.title}
+            Description: ${lostItem.description}
+            
+            Found Item:
+            Title: ${foundItem.title}
+            Description: ${foundItem.description}
+            
+            Based on the descriptions above, determine if these items could potentially be the same item.
+            Consider factors like:
+            - Item type/category
+            - Color
+            - Size
+            - Distinctive features
+            - Brand or model
+            - Any unique identifiers
+            
+            Respond with ONLY "YES" if they likely match (similarity > 70%), or "NO" if they don't match.
+            Be somewhat lenient - if there's a reasonable chance they're the same item, say YES.
+        `;
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text().trim().toUpperCase();
+        
+        return text.includes('YES');
+    } catch (error) {
+        console.error('Error checking match with Gemini:', error);
+        return false;
+    }
+}
+
+async function getMatchedItemsForUser(userEmail, userItems) {
+    try {
+        const oppositeType = userItems[0].type === 'lost' ? 'found' : 'lost';
+        const query = `
+            SELECT * FROM items 
+            WHERE status = 'approved' AND type = ?
+            ORDER BY created_at DESC
+        `;
+        
+        return new Promise((resolve, reject) => {
+            db.query(query, [oppositeType], async (err, oppositeItems) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                
+                const matchedItems = [];
+                
+                for (const userItem of userItems) {
+                    for (const oppositeItem of oppositeItems) {
+                        const isMatch = await checkItemsMatch(
+                            userItem.type === 'lost' ? userItem : oppositeItem,
+                            userItem.type === 'found' ? userItem : oppositeItem
+                        );
+                        
+                        if (isMatch && !matchedItems.find(item => item.id === oppositeItem.id)) {
+                            matchedItems.push(oppositeItem);
+                        }
+                    }
+                }
+                
+                resolve(matchedItems);
+            });
+        });
+    } catch (error) {
+        console.error('Error getting matched items:', error);
+        return [];
+    }
+}
 
 app.post('/api/items', upload.single('image'), (req, res) => {
     try {
@@ -173,20 +241,39 @@ app.post('/api/items', upload.single('image'), (req, res) => {
     }
 });
 
-app.get('/api/items', (req, res) => {
-    const query = `
-        SELECT * FROM items 
-        WHERE status = 'approved'
-        ORDER BY created_at DESC
-    `;
-
-    db.query(query, (err, results) => {
-        if (err) {
-            console.error('Error fetching items:', err);
-            return res.status(500).json({ error: 'Error fetching items' });
-        }
-        res.json(results);
-    });
+app.get('/api/items', async (req, res) => {
+    const userEmail = req.query.userEmail;
+    
+    if (!userEmail) {
+        return res.status(400).json({ error: 'User email is required' });
+    }
+    
+    try {
+      
+        const userItemsQuery = `
+            SELECT * FROM items 
+            WHERE user_email = ? AND status = 'approved'
+            ORDER BY created_at DESC
+        `;
+        
+        db.query(userItemsQuery, [userEmail], async (err, userItems) => {
+            if (err) {
+                console.error('Error fetching user items:', err);
+                return res.status(500).json({ error: 'Error fetching items' });
+            }
+            
+            if (userItems.length === 0) {
+               
+                return res.json([]);
+            }
+      
+            const matchedItems = await getMatchedItemsForUser(userEmail, userItems);
+            res.json(matchedItems);
+        });
+    } catch (error) {
+        console.error('Error in items route:', error);
+        res.status(500).json({ error: 'Error fetching items' });
+    }
 });
 
 app.get('/api/items/pending', (req, res) => {
@@ -257,7 +344,7 @@ app.post('/api/login', (req, res) => {
     else if (type === 'student' && 
         ((email === '23241a05j0@gmail.com' && password === '1234') || 
          (email === '23241a05h7@gmail.com' && password === '1234') ||
-         (email === '23241a05g9@gmail.com' && password === '23241a05g9'))) {
+         (email === '23241a05g9@gmail.com' && password === '1234'))) {
         res.json({ success: true, message: 'Student login successful' });
     } 
     else {
@@ -429,4 +516,4 @@ const server = app.listen(port, "0.0.0.0", () => {
     console.log(`Server bound to ${server.address().address}:${server.address().port}`);
 }).on('error', (err) => {
     console.error('Server error:', err);
-}); 
+});
