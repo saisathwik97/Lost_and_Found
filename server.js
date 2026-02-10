@@ -4,13 +4,13 @@ const mysql = require('mysql2');
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
-const fs = require('fs');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-
+const cloudinary = require("./cloudinary");
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const app = express();
-const port = 3000;
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -105,20 +105,19 @@ const initDatabase = () => {
     });
 };
 
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadDir = 'public/uploads';
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
+// Configure Cloudinary storage for multer
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "lost_and_found",
+    allowed_formats: ["jpg", "png", "jpeg"],
+    public_id: (req, file) => {
+      return Date.now() + "-" + file.originalname.split(".")[0];
     }
+  }
 });
 
-const upload = multer({ storage });
+const upload = multer({ storage: storage });
 
 async function checkItemsMatch(lostItem, foundItem) {
     try {
@@ -207,10 +206,10 @@ app.post('/api/items', upload.single('image'), (req, res) => {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
-  
+        // Store Cloudinary URL instead of local path
         let imagePath = null;
         if (req.file) {
-            imagePath = `/uploads/${req.file.filename}`;
+            imagePath = req.file.path; // Cloudinary URL
         }
 
         db.query('USE lost_and_found', (err) => {
@@ -224,7 +223,6 @@ app.post('/api/items', upload.single('image'), (req, res) => {
                 VALUES (?, ?, ?, ?, ?, 'pending')
             `;
 
-      
             const imageValue = imagePath || null;
 
             db.query(query, [title, description, imageValue, type, userEmail], (err, result) => {
@@ -397,9 +395,8 @@ app.delete('/api/items/:id', (req, res) => {
             return res.status(500).json({ error: 'Database error' });
         }
 
-
         const getItemQuery = 'SELECT user_email, image_path FROM items WHERE id = ?';
-        db.query(getItemQuery, [itemId], (err, results) => {
+        db.query(getItemQuery, [itemId], async (err, results) => {
             if (err) {
                 console.error('Error fetching item:', err);
                 return res.status(500).json({ error: 'Error fetching item' });
@@ -411,27 +408,32 @@ app.delete('/api/items/:id', (req, res) => {
 
             const item = results[0];
 
-       
+            // Check permissions
             if (userType !== 'admin' && item.user_email !== userEmail) {
                 return res.status(403).json({ error: 'You can only delete your own items' });
             }
 
-       
+            // Delete from database
             const deleteQuery = 'DELETE FROM items WHERE id = ?';
-            db.query(deleteQuery, [itemId], (err) => {
+            db.query(deleteQuery, [itemId], async (err) => {
                 if (err) {
                     console.error('Error deleting item:', err);
                     return res.status(500).json({ error: 'Error deleting item' });
                 }
 
-           
+                // Delete from Cloudinary if image exists
                 if (item.image_path) {
-                    const imagePath = path.join(__dirname, 'public', item.image_path);
-                    fs.unlink(imagePath, (err) => {
-                        if (err) {
-                            console.error('Error deleting image file:', err);
-                        }
-                    });
+                    try {
+                        // Extract public_id from Cloudinary URL
+                        const urlParts = item.image_path.split('/');
+                        const filename = urlParts[urlParts.length - 1];
+                        const publicId = `lost_and_found/${filename.split('.')[0]}`;
+                        
+                        await cloudinary.uploader.destroy(publicId);
+                        console.log('Image deleted from Cloudinary:', publicId);
+                    } catch (error) {
+                        console.error('Error deleting image from Cloudinary:', error);
+                    }
                 }
 
                 res.json({ message: 'Item deleted successfully' });
@@ -511,9 +513,11 @@ app.get('/api/chat-users/:user_email', (req, res) => {
     });
 });
 
+const port = process.env.PORT || 3000;
+
 const server = app.listen(port, "0.0.0.0", () => {
-    console.log(`Server running at http://localhost:${port}`);
-    console.log(`Server bound to ${server.address().address}:${server.address().port}`);
-}).on('error', (err) => {
-    console.error('Server error:', err);
+    console.log(`Server running on port ${port}`);
+    console.log(`Bound to ${server.address().address}:${server.address().port}`);
+}).on("error", (err) => {
+    console.error("Server error:", err);
 });
