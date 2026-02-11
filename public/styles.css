@@ -15,11 +15,9 @@
     letter-spacing: 0.3px;
     display: inline-block;
     margin-top: 10px;
-
     border: 1px solid #c7d2fe;
     box-shadow: 0 4px 10px rgba(99, 102, 241, 0.15);
 }
-
 
 .no-items {
     text-align: center;
@@ -68,14 +66,15 @@ body {
     align-items: center;
     padding: 20px;
 }
-.lost-text{
-    color:red;
 
+.lost-text {
+    color: red;
 }
-.found-text{
-    color:green;
 
+.found-text {
+    color: green;
 }
+
 .container {
     background-color: white;
     padding: 2rem;
@@ -84,10 +83,12 @@ body {
     width: 95%;
     max-width: 600px;
 }
-.stu2{
+
+.stu2 {
     display: flex;
     justify-content: center;
 }
+
 h1 {
     text-align: center;
     color: #2c3e50;
@@ -112,6 +113,7 @@ h2 {
     gap: 1rem;
     justify-content: center;
     margin-bottom: 1rem;
+    flex-wrap: wrap;
 }
 
 .login-btn {
@@ -154,6 +156,31 @@ h2 {
     outline: none;
 }
 
+.password-container {
+    position: relative;
+    margin-bottom: 1rem;
+}
+
+.password-container input {
+    width: 100%;
+    padding-right: 50px;
+    margin-bottom: 0;
+}
+
+.toggle-password {
+    position: absolute;
+    right: 0px;
+    top: 1px;   
+    cursor: pointer;
+}
+
+
+
+
+.toggle-password:hover {
+    opacity: 1;
+}
+
 .login-form button {
     padding: 1rem;
     background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
@@ -171,11 +198,31 @@ h2 {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
+.login-form small {
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.login-form p {
+    text-align: center;
+    margin-top: 10px;
+    color: #666;
+}
+
+.login-form a {
+    color: #4CAF50;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.login-form a:hover {
+    text-decoration: underline;
+}
+
 .hidden {
     display: none;
 }
 
-/* Dashboard styles */
 .dashboard {
     padding: 2rem;
     background-color: #f8f9fa;
@@ -309,11 +356,6 @@ h2 {
     }
 }
 
-/* Form Validation Styles */
-
-
-
-
 /* Loading State */
 .loading {
     position: relative;
@@ -408,12 +450,13 @@ h2 {
 .delete-btn:hover {
     background-color: #c82333;
 }
-.stu{
+
+.stu {
     display: flex;
     justify-content: space-between;
 }
 
-.chat-btn2{
+.chat-btn2 {
     padding: 1rem 1rem;
     border: none;
     border-radius: 8px;
@@ -425,6 +468,7 @@ h2 {
     transition: all 0.3s ease;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
+
 .chat-btn {
     padding: 1rem 1rem;
     border: none;
@@ -436,14 +480,15 @@ h2 {
     cursor: pointer;
     transition: all 0.3s ease;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-    
 }
-.chat-btn2:hover{
+
+.chat-btn2:hover {
     background-color: #4CAF50;
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
-.chat-btn:hover{
+
+.chat-btn:hover {
     background-color: #4CAF50;
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
@@ -545,6 +590,21 @@ h2 {
     border: 1px solid #ddd;
     border-radius: 4px;
 }
+.logout-btn {
+    background-color: #28a745;  
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.logout-btn:hover {
+    background-color: #218838;  
+}
+
+
 
 .chat-input button {
     padding: 8px 16px;
@@ -557,4 +617,4 @@ h2 {
 
 .chat-input button:hover {
     background-color: #0056b3;
-} 
+}

@@ -174,6 +174,25 @@ function toggleChat() {
         chatInterval = setInterval(loadMessages, 2000);
     }
 }
+async function logout() {
+    try {
+        const response = await fetch('/api/logout', {
+            method: 'POST',
+            credentials: 'include'
+        });
+        const data = await response.json();
+        if (data.success) {
+            sessionStorage.clear();
+            localStorage.clear();
+            window.location.href = '/';
+        } else {
+            alert('Logout failed. Please try again.');
+        }
+    } catch (error) {
+        console.error('Logout error:', error);
+        alert('Logout failed. Please try again.');
+    }
+}
 
 async function loadMessages() {
     try {

@@ -4,21 +4,38 @@ const mysql = require('mysql2');
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
+const session = require('express-session');
+const bcrypt = require('bcrypt');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const cloudinary = require("./cloudinary");
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: true,
+    credentials: true
+}));
 app.use(express.json());
+app.use(express.static("public"));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+        secure: false, 
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000 
+    }
+}));
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
-
 
 app.use((err, req, res, next) => {
     console.error('Error:', err);
@@ -34,7 +51,6 @@ const db = mysql.createConnection({
   ssl: { rejectUnauthorized: true }
 });
 
-
 db.connect((err) => {
     if (err) {
         console.error('Error connecting to MySQL:', err);
@@ -44,11 +60,8 @@ db.connect((err) => {
         return;
     }
     console.log('Connected to MySQL database');
-    
-  
     initDatabase();
 });
-
 
 const initDatabase = () => {
     db.query('CREATE DATABASE IF NOT EXISTS lost_and_found', (err) => {
@@ -98,14 +111,30 @@ const initDatabase = () => {
                         console.error('Error creating messages table:', err);
                         return;
                     }
-                    console.log('Database and tables initialized successfully');
+                    
+                    const createUsersTableQuery = `
+                        CREATE TABLE IF NOT EXISTS users (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            email VARCHAR(255) NOT NULL UNIQUE,
+                            password VARCHAR(255) NOT NULL,
+                            name VARCHAR(255) NOT NULL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    `;
+                    
+                    db.query(createUsersTableQuery, (err) => {
+                        if (err) {
+                            console.error('Error creating users table:', err);
+                            return;
+                        }
+                        console.log('Database and tables initialized successfully');
+                    });
                 });
             });
         });
     });
 };
 
-// Configure Cloudinary storage for multer
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
@@ -118,6 +147,125 @@ const storage = new CloudinaryStorage({
 });
 
 const upload = multer({ storage: storage });
+
+const isAuthenticated = (req, res, next) => {
+    if (req.session && req.session.user) {
+        return next();
+    }
+    res.status(401).json({ error: 'Not authenticated' });
+};
+
+app.post('/api/register', async (req, res) => {
+    const { name, email, password } = req.body;
+    
+    console.log('Registration request received:', { name, email }); 
+    
+    if (!name || !email || !password) {
+        return res.status(400).json({ error: 'All fields are required' });
+    }
+   
+    if (!email.endsWith('@grietcollege.com')) {
+        return res.status(400).json({ error: 'Only @grietcollege.com email addresses are allowed' });
+    }
+    
+    try {
+    
+        const hashedPassword = await bcrypt.hash(password, 10);
+        db.query('USE lost_and_found', (err) => {
+            if (err) {
+                console.error('Error switching to database:', err);
+                return res.status(500).json({ error: 'Database error' });
+            }
+            
+            const query = 'INSERT INTO users (username, email, password) VALUES (?, ?, ?)';
+            
+            db.query(query, [name, email, hashedPassword], (err, result) => {
+                if (err) {
+                    console.error('Error registering user:', err); 
+                    if (err.code === 'ER_DUP_ENTRY') {
+                        return res.status(400).json({ error: 'Email already registered' });
+                    }
+                    if (err.code === 'ER_NO_SUCH_TABLE') {
+                        return res.status(500).json({ error: 'Database tables not initialized. Please restart the server.' });
+                    }
+                    return res.status(500).json({ error: 'Error registering user: ' + err.message });
+                }
+                
+                console.log('User registered successfully:', result.insertId); 
+                res.json({ success: true, message: 'Registration successful' });
+            });
+        });
+    } catch (error) {
+        console.error('Error in registration:', error);
+        res.status(500).json({ error: 'Internal server error: ' + error.message });
+    }
+});
+
+app.post('/api/login', async (req, res) => {
+    const { email, password, type } = req.body;
+    
+    if (type === 'admin' && email === 'admin@email.com' && password === 'admin123') {
+        req.session.user = {
+            email: email,
+            type: 'admin'
+        };
+        return res.json({ success: true, message: 'Admin login successful' });
+    } 
+    
+    if (type === 'student') {
+        const query = 'SELECT * FROM users WHERE email = ?';
+        
+        db.query(query, [email], async (err, results) => {
+            if (err) {
+                console.error('Error during login:', err);
+                return res.status(500).json({ error: 'Error during login' });
+            }
+            
+            if (results.length === 0) {
+                return res.status(401).json({ success: false, message: 'Invalid credentials' });
+            }
+            
+            const user = results[0];
+            
+            try {
+                const match = await bcrypt.compare(password, user.password);
+                
+                if (match) {
+                    req.session.user = {
+                        email: user.email,
+                        name: user.username,
+                        type: 'student'
+                    };
+                    return res.json({ success: true, message: 'Student login successful' });
+                } else {
+                    return res.status(401).json({ success: false, message: 'Invalid credentials' });
+                }
+            } catch (error) {
+                console.error('Error comparing passwords:', error);
+                return res.status(500).json({ error: 'Error during login' });
+            }
+        });
+    } else {
+        res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+});
+
+app.post('/api/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            return res.status(500).json({ error: 'Error logging out' });
+        }
+        res.json({ success: true, message: 'Logged out successfully' });
+    });
+});
+
+app.get('/api/session', (req, res) => {
+    if (req.session && req.session.user) {
+        res.json({ authenticated: true, user: req.session.user });
+    } else {
+        res.json({ authenticated: false });
+    }
+});
 
 async function checkItemsMatch(lostItem, foundItem) {
     try {
@@ -161,42 +309,49 @@ async function checkItemsMatch(lostItem, foundItem) {
 async function getMatchedItemsForUser(userEmail, userItems) {
     try {
         const oppositeType = userItems[0].type === 'lost' ? 'found' : 'lost';
+
         const query = `
             SELECT * FROM items 
             WHERE status = 'approved' AND type = ?
             ORDER BY created_at DESC
         `;
-        
+
         return new Promise((resolve, reject) => {
-            db.query(query, [oppositeType], async (err, oppositeItems) => {
+            db.query(query, [oppositeType], (err, oppositeItems) => {
                 if (err) {
                     reject(err);
                     return;
                 }
-                
+
                 const matchedItems = [];
-                
+
                 for (const userItem of userItems) {
                     for (const oppositeItem of oppositeItems) {
-                        const isMatch = await checkItemsMatch(
-                            userItem.type === 'lost' ? userItem : oppositeItem,
-                            userItem.type === 'found' ? userItem : oppositeItem
-                        );
-                        
-                        if (isMatch && !matchedItems.find(item => item.id === oppositeItem.id)) {
-                            matchedItems.push(oppositeItem);
+
+                        const userText = (userItem.title + " " + userItem.description).toLowerCase();
+                        const oppositeText = (oppositeItem.title + " " + oppositeItem.description).toLowerCase();
+
+                        if (
+                            userText.includes(oppositeItem.title.toLowerCase()) ||
+                            oppositeText.includes(userItem.title.toLowerCase())
+                        ) {
+                            if (!matchedItems.find(item => item.id === oppositeItem.id)) {
+                                matchedItems.push(oppositeItem);
+                            }
                         }
                     }
                 }
-                
+
                 resolve(matchedItems);
             });
         });
+
     } catch (error) {
         console.error('Error getting matched items:', error);
         return [];
     }
 }
+
 
 app.post('/api/items', upload.single('image'), (req, res) => {
     try {
@@ -206,10 +361,9 @@ app.post('/api/items', upload.single('image'), (req, res) => {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
-        // Store Cloudinary URL instead of local path
         let imagePath = null;
         if (req.file) {
-            imagePath = req.file.path; // Cloudinary URL
+            imagePath = req.file.path;
         }
 
         db.query('USE lost_and_found', (err) => {
@@ -247,7 +401,6 @@ app.get('/api/items', async (req, res) => {
     }
     
     try {
-      
         const userItemsQuery = `
             SELECT * FROM items 
             WHERE user_email = ? AND status = 'approved'
@@ -261,7 +414,6 @@ app.get('/api/items', async (req, res) => {
             }
             
             if (userItems.length === 0) {
-               
                 return res.json([]);
             }
       
@@ -327,29 +479,12 @@ app.post('/api/items/:id/reject', (req, res) => {
     });
 });
 
-app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+app.get('/admin-dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin-dashboard.html'));
 });
-
-app.post('/api/login', (req, res) => {
-    const { email, password, type } = req.body;
-    
-
-    if (type === 'admin' && email === 'admin@email.com' && password === 'admin123') {
-        res.json({ success: true, message: 'Admin login successful' });
-    } 
-  
-    else if (type === 'student' && 
-        ((email === '23241a05j0@gmail.com' && password === '1234') || 
-         (email === '23241a05h7@gmail.com' && password === '1234') ||
-         (email === '23241a05g9@gmail.com' && password === '1234'))) {
-        res.json({ success: true, message: 'Student login successful' });
-    } 
-    else {
-        res.status(401).json({ success: false, message: 'Invalid credentials' });
-    }
+app.get("/student-dashboard", (req, res) => {
+    res.sendFile(__dirname + "/public/student-dashboard.html");
 });
-
 
 app.get('/api/items/approved', (req, res) => {
     const query = `
@@ -383,7 +518,6 @@ app.get('/api/items/user/:email', (req, res) => {
     });
 });
 
-
 app.delete('/api/items/:id', (req, res) => {
     const itemId = req.params.id;
     const userEmail = req.headers['user-email'];
@@ -408,12 +542,10 @@ app.delete('/api/items/:id', (req, res) => {
 
             const item = results[0];
 
-            // Check permissions
             if (userType !== 'admin' && item.user_email !== userEmail) {
                 return res.status(403).json({ error: 'You can only delete your own items' });
             }
 
-            // Delete from database
             const deleteQuery = 'DELETE FROM items WHERE id = ?';
             db.query(deleteQuery, [itemId], async (err) => {
                 if (err) {
@@ -421,10 +553,8 @@ app.delete('/api/items/:id', (req, res) => {
                     return res.status(500).json({ error: 'Error deleting item' });
                 }
 
-                // Delete from Cloudinary if image exists
                 if (item.image_path) {
                     try {
-                        // Extract public_id from Cloudinary URL
                         const urlParts = item.image_path.split('/');
                         const filename = urlParts[urlParts.length - 1];
                         const publicId = `lost_and_found/${filename.split('.')[0]}`;

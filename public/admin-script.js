@@ -4,6 +4,25 @@ if (!sessionStorage.getItem('userType') || sessionStorage.getItem('userType') !=
 }
 
 document.getElementById('userEmailDisplay').textContent = `Logged in as: ${sessionStorage.getItem('userEmail')}`;
+async function logout() {
+    try {
+        const response = await fetch('/api/logout', {
+            method: 'POST',
+            credentials: 'include'
+        });
+        const data = await response.json();
+        if (data.success) {
+            sessionStorage.clear();
+            localStorage.clear();
+            window.location.href = '/';
+        } else {
+            alert('Logout failed. Please try again.');
+        }
+    } catch (error) {
+        console.error('Logout error:', error);
+        alert('Logout failed. Please try again.');
+    }
+}
 
 async function loadPendingItems() {
     try {

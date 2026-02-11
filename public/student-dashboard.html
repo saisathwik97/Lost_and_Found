@@ -12,6 +12,7 @@
         <div class="user-header">
             <h1>Student Dashboard</h1>
             <p class="user-email" id="userEmailDisplay"></p>
+            <button class="logout-btn" onclick="logout()">Logout</p></button>
             
         </div>
         <div class="dashboard">
@@ -19,8 +20,9 @@
                 <h2>Post New Item</h2>
                 <input type="text" id="itemTitle" placeholder="Item Title" required>
                 <textarea id="itemDescription" placeholder="Item Description" required></textarea>
+                 <p class="form-note">Image (optional)</p>
                 <input type="file" id="itemImage" accept="image/*">
-                <p class="form-note">Image (optional)</p>
+               
                 <select id="itemType" required>
                     <option value="">Select Type</option>
                     <option value="lost">Lost Item</option>
