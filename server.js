@@ -117,7 +117,7 @@ const initDatabase = () => {
                             id INT AUTO_INCREMENT PRIMARY KEY,
                             email VARCHAR(255) NOT NULL UNIQUE,
                             password VARCHAR(255) NOT NULL,
-                            name VARCHAR(255) NOT NULL,
+                            username VARCHAR(255) NOT NULL,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )
                     `;
@@ -156,11 +156,11 @@ const isAuthenticated = (req, res, next) => {
 };
 
 app.post('/api/register', async (req, res) => {
-    const { name, email, password } = req.body;
+    const { username, email, password } = req.body;
     
-    console.log('Registration request received:', { name, email }); 
+    console.log('Registration request received:', { username, email }); 
     
-    if (!name || !email || !password) {
+    if (!username || !email || !password) {
         return res.status(400).json({ error: 'All fields are required' });
     }
    
@@ -179,7 +179,7 @@ app.post('/api/register', async (req, res) => {
             
             const query = 'INSERT INTO users (username, email, password) VALUES (?, ?, ?)';
             
-            db.query(query, [name, email, hashedPassword], (err, result) => {
+            db.query(query, [username, email, hashedPassword], (err, result) => {
                 if (err) {
                     console.error('Error registering user:', err); 
                     if (err.code === 'ER_DUP_ENTRY') {
@@ -233,7 +233,7 @@ app.post('/api/login', async (req, res) => {
                 if (match) {
                     req.session.user = {
                         email: user.email,
-                        name: user.username,
+                        username: user.username,
                         type: 'student'
                     };
                     return res.json({ success: true, message: 'Student login successful' });
