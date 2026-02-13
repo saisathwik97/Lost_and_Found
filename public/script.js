@@ -101,7 +101,7 @@ async function register() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ name, email, password })
+            body: JSON.stringify({ username:name, email, password })
         });
         
         console.log('Response status:', response.status);
